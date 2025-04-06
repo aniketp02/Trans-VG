@@ -3,6 +3,14 @@ __pycache__/
 *.py[cod]
 *$py.class
 
+checkpoints 
+data.tar 
+data 
+ln_data 
+outputs 
+results 
+rsvg
+
 # C extensions
 *.so
 
