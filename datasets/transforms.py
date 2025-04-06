@@ -8,7 +8,7 @@ import torchvision.transforms as T
 import torchvision.transforms.functional as F
 
 from utils.box_utils import xyxy2xywh
-from utils.misc import interpolate
+from utils.misc import interpolate, _new_empty_tensor
 
 
 def crop(image, box, region):

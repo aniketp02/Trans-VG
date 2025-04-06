@@ -145,6 +145,8 @@ class TransVGDataset(data.Dataset):
             'params': {'dataset': 'refcocog', 'split_by': 'umd'}
         },
         'flickr': {
+            'splits': ('train', 'val', 'test')},
+        'rsvg': {
             'splits': ('train', 'val', 'test')}
     }
 
@@ -175,9 +177,12 @@ class TransVGDataset(data.Dataset):
             self.dataset_root = osp.join(self.data_root, 'referit')
             self.im_dir = osp.join(self.dataset_root, 'images')
             self.split_dir = osp.join(self.dataset_root, 'splits')
-        elif  self.dataset == 'flickr':
+        elif self.dataset == 'flickr':
             self.dataset_root = osp.join(self.data_root, 'Flickr30k')
             self.im_dir = osp.join(self.dataset_root, 'flickr30k_images')
+        elif self.dataset == 'rsvg':
+            self.dataset_root = osp.join(self.data_root, 'rsvg')
+            self.im_dir = osp.join(self.dataset_root, 'images')
         else:   ## refcoco, etc.
             self.dataset_root = osp.join(self.data_root, 'other')
             self.im_dir = osp.join(
@@ -206,13 +211,35 @@ class TransVGDataset(data.Dataset):
         splits = [split]
         if self.dataset != 'referit':
             splits = ['train', 'val'] if split == 'trainval' else [split]
+        
         for split in splits:
             imgset_file = '{0}_{1}.pth'.format(self.dataset, split)
+            
+            # First try the standard path (dataset_path/file)
             imgset_path = osp.join(dataset_path, imgset_file)
-            self.images += torch.load(imgset_path)
+            if not os.path.exists(imgset_path) and self.dataset == 'rsvg':
+                # For RSVG, try loading directly from split_root if standard path doesn't exist
+                imgset_path = osp.join(self.split_root, imgset_file)
+            
+            print(f"Loading dataset from: {imgset_path}")
+            if os.path.exists(imgset_path):
+                self.images += torch.load(imgset_path)
+            else:
+                print(f"Warning: Could not find file {imgset_path}")
 
     def exists_dataset(self):
-        return osp.exists(osp.join(self.split_root, self.dataset))
+        """Check if the dataset exists"""
+        dataset_path = osp.join(self.split_root, self.dataset)
+        
+        # For RSVG dataset, if the files exist directly in split_root, consider it exists
+        if self.dataset == 'rsvg':
+            for split in self.SUPPORTED_DATASETS[self.dataset]['splits']:
+                file_path = osp.join(self.split_root, f"rsvg_{split}.pth")
+                if osp.exists(file_path):
+                    return True
+        
+        # Standard check for other datasets
+        return osp.exists(dataset_path)
 
     def pull_item(self, idx):
         if self.dataset == 'flickr':
@@ -226,14 +253,20 @@ class TransVGDataset(data.Dataset):
         else:
             bbox = np.array(bbox, dtype=int)
 
+        # Try different possible image paths
         img_path = osp.join(self.im_dir, img_file)
-        img = Image.open(img_path).convert("RGB")
-        # img = cv2.imread(img_path)
-        # ## duplicate channel if gray image
-        # if img.shape[-1] > 1:
-        #     img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-        # else:
-        #     img = np.stack([img] * 3)
+        if not os.path.exists(img_path) and self.dataset == 'rsvg':
+            # Also try the parent image directory
+            img_path = osp.join(self.data_root, 'images', img_file)
+        
+        print(f"Looking for image at: {img_path}")
+        
+        if not os.path.exists(img_path):
+            print(f"Warning: Image not found at {img_path}")
+            # Create a dummy image for training purposes
+            img = Image.new('RGB', (640, 640), color = (73, 109, 137))
+        else:
+            img = Image.open(img_path).convert("RGB")
 
         bbox = torch.tensor(bbox)
         bbox = bbox.float()

@@ -47,6 +47,21 @@ def xyxy2xywh(x):
     return torch.stack(b, dim=-1)
 
 
+def box_cxcywh_to_xyxy(x):
+    """Convert bounding box from (cx, cy, w, h) format to (x1, y1, x2, y2) format
+    
+    Args:
+        x: bounding box tensor in (cx, cy, w, h) format
+        
+    Returns:
+        y: bounding box tensor in (x1, y1, x2, y2) format
+    """
+    x_c, y_c, w, h = x.unbind(-1)
+    b = [x_c - 0.5 * w, y_c - 0.5 * h,
+         x_c + 0.5 * w, y_c + 0.5 * h]
+    return torch.stack(b, dim=-1)
+
+
 def box_iou(boxes1, boxes2):
     area1 = box_area(boxes1)
     area2 = box_area(boxes2)

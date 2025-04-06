@@ -1,0 +1,2 @@
+# RSVG Dataset on MPS backend
+python eval.py --batch_size 32 --num_workers 4 --bert_enc_num 12 --detr_enc_num 6 --backbone resnet50 --dataset rsvg --max_query_len 40 --eval_set test --device mps --data_root ./rsvg --split_root ./rsvg --eval_model outputs/rsvg_r50/checkpoint.pth --output_dir ./outputs/rsvg_r50_results 

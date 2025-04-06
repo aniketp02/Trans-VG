@@ -4,6 +4,7 @@ import json
 import random
 import time
 import math
+import os
 
 import numpy as np
 from pathlib import Path
@@ -107,11 +108,11 @@ def get_args_parser():
     # dataset parameters
     parser.add_argument('--output_dir', default='./outputs',
                         help='path where to save, empty for no saving')
-    parser.add_argument('--device', default='cuda',
+    parser.add_argument('--device', default='mps',
                         help='device to use for training / testing')
     parser.add_argument('--seed', default=13, type=int)
     parser.add_argument('--resume', default='', help='resume from checkpoint')
-    parser.add_argument('--detr_model', default='./saved_models/detr-r50.pth', type=str, help='detr model')
+    parser.add_argument('--detr_model', default='./checkpoints/detr-r50.pth', type=str, help='detr model')
     parser.add_argument('--bert_model', default='bert-base-uncased', type=str, help='bert model')
     parser.add_argument('--light', dest='light', default=False, action='store_true', help='if use smaller model')
     parser.add_argument('--start_epoch', default=0, type=int, metavar='N',
@@ -122,46 +123,74 @@ def get_args_parser():
     parser.add_argument('--world_size', default=1, type=int,
                         help='number of distributed processes')
     parser.add_argument('--dist_url', default='env://', help='url used to set up distributed training')
+
+    # Add the missing frozen_weights argument
+    parser.add_argument('--frozen_weights', type=str, default=None,
+                        help="Path to the pretrained model. If set, only the mask head will be trained")
+
     return parser
 
 
-def main(args):
+def tensor_to_python(obj):
+    """Convert tensors to Python native types for JSON serialization"""
+    if isinstance(obj, torch.Tensor):
+        return obj.item() if obj.numel() == 1 else obj.tolist()
+    elif isinstance(obj, dict):
+        return {k: tensor_to_python(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [tensor_to_python(item) for item in obj]
+    else:
+        return obj
+
+
+def main(args, logger=None):
     utils.init_distributed_mode(args)
     print("git:\n  {}\n".format(utils.get_sha()))
 
-    device = torch.device(args.device)
+    if args.frozen_weights is not None:
+        assert args.masks, "Frozen training is meant for segmentation only"
+    print(args)
 
+    # Set up the device
+    if args.device == 'mps' and torch.backends.mps.is_available():
+        device = torch.device('mps')
+        print("Using MPS device")
+    elif args.device == 'cuda' and torch.cuda.is_available():
+        device = torch.device('cuda')
+    else:
+        device = torch.device('cpu')
+        print("Falling back to CPU")
+    
+    # fix the seed for reproducibility
     seed = args.seed + utils.get_rank()
     torch.manual_seed(seed)
     np.random.seed(seed)
     random.seed(seed)
-    
+
     # build model
     model = build_model(args)
     model.to(device)
 
     model_without_ddp = model
     if args.distributed:
-        model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[args.gpu], find_unused_parameters=True)
+        model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[args.gpu])
         model_without_ddp = model.module
     n_parameters = sum(p.numel() for p in model.parameters() if p.requires_grad)
     print('number of params:', n_parameters)
 
-    visu_cnn_param = [p for n, p in model_without_ddp.named_parameters() if (("visumodel" in n) and ("backbone" in n) and p.requires_grad)]
-    visu_tra_param = [p for n, p in model_without_ddp.named_parameters() if (("visumodel" in n) and ("backbone" not in n) and p.requires_grad)]
-    text_tra_param = [p for n, p in model_without_ddp.named_parameters() if (("textmodel" in n) and p.requires_grad)]
-    rest_param = [p for n, p in model_without_ddp.named_parameters() if (("visumodel" not in n) and ("textmodel" not in n) and p.requires_grad)]
+    # using different lr for bert, vision encoder and decoder
+    param_list = [
+        {"params": [p for n, p in model_without_ddp.named_parameters() if "visumodel" in n and p.requires_grad]},
+        {"params": [p for n, p in model_without_ddp.named_parameters() if "textmodel" in n and p.requires_grad],
+         "lr": args.lr_bert},
+    ]
+    
+    # remaining parameters have the default learning rate
+    param_list.append({
+        "params": [p for n, p in model_without_ddp.named_parameters() 
+                  if "visumodel" not in n and "textmodel" not in n and p.requires_grad],
+    })
 
-    param_list = [{"params": rest_param},
-                   {"params": visu_cnn_param, "lr": args.lr_visu_cnn},
-                   {"params": visu_tra_param, "lr": args.lr_visu_tra},
-                   {"params": text_tra_param, "lr": args.lr_bert},
-                   ]
-    visu_param = [p for n, p in model_without_ddp.named_parameters() if "visumodel" in n and p.requires_grad]
-    text_param = [p for n, p in model_without_ddp.named_parameters() if "textmodel" in n and p.requires_grad]
-    rest_param = [p for n, p in model_without_ddp.named_parameters() if (("visumodel" not in n) and ("textmodel" not in n) and p.requires_grad)]
-    
-    
     # using RMSProp or AdamW
     if args.optimizer == 'rmsprop':
         optimizer = torch.optim.RMSprop(param_list, lr=args.lr, weight_decay=args.weight_decay)
@@ -237,17 +266,18 @@ def main(args):
         if args.distributed:
             sampler_train.set_epoch(epoch)
         train_stats = train_one_epoch(
-            args, model, data_loader_train, optimizer, device, epoch, args.clip_max_norm
+            args, model, data_loader_train, optimizer, device, epoch, args.clip_max_norm, logger
         )
         lr_scheduler.step()
 
-        val_stats = validate(args, model, data_loader_val, device)
+        val_stats = validate(args, model, data_loader_val, device, logger)
         
         log_stats = {**{f'train_{k}': v for k, v in train_stats.items()},
                      **{f'validation_{k}': v for k, v in val_stats.items()},
                      'epoch': epoch,
                      'n_parameters': n_parameters}
 
+        log_stats = tensor_to_python(log_stats)
         if args.output_dir and utils.is_main_process():
             with (output_dir / "log.txt").open("a") as f:
                 f.write(json.dumps(log_stats) + "\n")

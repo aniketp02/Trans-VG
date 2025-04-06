@@ -18,9 +18,10 @@ from torch import Tensor
 
 # needed due to empty tensor bug in pytorch and torchvision 0.5
 import torchvision
-if float(torchvision.__version__[:3]) < 0.7:
-    from torchvision.ops import _new_empty_tensor
-    from torchvision.ops.misc import _output_size
+# Removing the problematic imports
+# if float(torchvision.__version__[:3]) < 0.7:
+#     from torchvision.ops import _new_empty_tensor
+#     from torchvision.ops.misc import _output_size
 
 
 class SmoothedValue(object):
@@ -449,6 +450,12 @@ def init_distributed_mode(args):
         print('Not using distributed mode')
         args.distributed = False
         return
+
+    if args.device == 'mps':
+        # For MPS, we don't use distributed mode
+        args.distributed = False
+        return
+        
     args.distributed = True
 
     torch.cuda.set_device(args.gpu)
@@ -487,14 +494,60 @@ def interpolate(input, size=None, scale_factor=None, mode="nearest", align_corne
     This will eventually be supported natively by PyTorch, and this
     class can go away.
     """
-    if float(torchvision.__version__[:3]) < 0.7:
-        if input.numel() > 0:
-            return torch.nn.functional.interpolate(
-                input, size, scale_factor, mode, align_corners
-            )
+    if input.numel() > 0:
+        return torch.nn.functional.interpolate(
+            input, size, scale_factor, mode, align_corners
+        )
 
-        output_shape = _output_size(2, input, size, scale_factor)
-        output_shape = list(input.shape[:-2]) + list(output_shape)
-        return _new_empty_tensor(input, output_shape)
+    # Handle empty tensors
+    if size is None and scale_factor is None:
+        raise ValueError("either size or scale_factor should be defined")
+    
+    if size is not None and scale_factor is not None:
+        raise ValueError("only one of size or scale_factor should be defined")
+        
+    if scale_factor is not None:
+        # Calculate output size based on scale factor
+        if isinstance(scale_factor, (list, tuple)):
+            output_size = [int(input.shape[-2] * scale_factor[0]), 
+                          int(input.shape[-1] * scale_factor[1])]
+        else:
+            output_size = [int(input.shape[-2] * scale_factor), 
+                          int(input.shape[-1] * scale_factor)]
     else:
-        return torchvision.ops.misc.interpolate(input, size, scale_factor, mode, align_corners)
+        output_size = size
+    
+    # Convert to list if it's not already
+    if not isinstance(output_size, list):
+        output_size = list(output_size)
+    
+    output_shape = list(input.shape[:-2]) + list(output_size)
+    return _new_empty_tensor(input, output_shape)
+
+
+def _new_empty_tensor(x, shape):
+    """
+    Create a new empty tensor with the same type and device as the input tensor.
+    This is a replacement for torchvision.ops._new_empty_tensor which is no longer available.
+    """
+    return x.new_empty(shape)
+
+
+def get_total_grad_norm(parameters, norm_type=2):
+    """
+    Calculate the total gradient norm of all parameters.
+    
+    Args:
+        parameters: Iterator over parameters to compute the norm for
+        norm_type: Type of the norm to use (default: 2 for L2 norm)
+        
+    Returns:
+        Total norm of the parameters
+    """
+    parameters = list(filter(lambda p: p.grad is not None, parameters))
+    if len(parameters) == 0:
+        return torch.tensor(0.0)
+    
+    device = parameters[0].grad.device
+    total_norm = torch.norm(torch.stack([torch.norm(p.grad.detach(), norm_type).to(device) for p in parameters]), norm_type)
+    return total_norm
