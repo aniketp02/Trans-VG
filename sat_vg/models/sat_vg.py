@@ -96,6 +96,11 @@ class SatVG(nn.Module):
         # Create position embeddings
         seq_length = sequence.size(1)
         position_ids = torch.arange(seq_length, device=sequence.device).unsqueeze(0).repeat(batch_size, 1)
+        
+        # Ensure position IDs don't exceed the embedding size
+        max_position = self.position_embedding.num_embeddings - 1
+        position_ids = torch.clamp(position_ids, 0, max_position)
+        
         position_embeddings = self.position_embedding(position_ids)
         
         # Add position embeddings
