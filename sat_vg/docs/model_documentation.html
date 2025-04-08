@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SatVG Model Documentation</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            line-height: 1.6;
+            margin: 0;
+            padding: 20px;
+            color: #333;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        h1, h2, h3 {
+            color: #2c3e50;
+        }
+        .architecture {
+            background-color: #f8f9fa;
+            padding: 20px;
+            border-radius: 5px;
+            margin: 20px 0;
+        }
+        .code-block {
+            background-color: #f0f0f0;
+            padding: 15px;
+            border-radius: 5px;
+            overflow-x: auto;
+            font-family: monospace;
+        }
+        .diagram {
+            text-align: center;
+            margin: 20px 0;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+        }
+        th, td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: left;
+        }
+        th {
+            background-color: #f2f2f2;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>SatVG: Satellite Visual Grounding Model</h1>
+        
+        <h2>1. Model Overview</h2>
+        <p>
+            SatVG (Satellite Visual Grounding) is a deep learning model designed to localize regions in satellite imagery based on natural language queries. 
+            The model combines visual features from satellite images with text features from natural language queries to predict bounding box coordinates.
+        </p>
+
+        <h2>2. Model Architecture</h2>
+        <div class="architecture">
+            <h3>2.1 High-Level Architecture</h3>
+            <div class="diagram">
+                <img src="architecture.png" alt="SatVG Architecture Diagram">
+            </div>
+            
+            <h3>2.2 Component Details</h3>
+            <h4>Visual Encoder (ResNet)</h4>
+            <ul>
+                <li>Backbone: ResNet50/101 (pretrained)</li>
+                <li>Output dimension: 2048</li>
+                <li>Feature map size: 7x7 (49 visual tokens)</li>
+            </ul>
+
+            <h4>Text Encoder (BERT)</h4>
+            <ul>
+                <li>Model: BERT-base-uncased</li>
+                <li>Max query length: 40 tokens</li>
+                <li>Output dimension: 768</li>
+            </ul>
+
+            <h4>Fusion Components</h4>
+            <ul>
+                <li>Hidden dimension: 256</li>
+                <li>Number of attention heads: 8</li>
+                <li>Feedforward dimension: 2048</li>
+                <li>Number of encoder layers: 6</li>
+                <li>Dropout: 0.2</li>
+            </ul>
+        </div>
+
+        <h2>3. Input and Output</h2>
+        <h3>3.1 Input Format</h3>
+        <div class="code-block">
+            # Input tensors
+            image: torch.Tensor  # Shape: [B, 3, H, W]
+            text_tokens: torch.Tensor  # Shape: [B, L]
+            text_mask: torch.Tensor  # Shape: [B, L]
+        </div>
+
+        <h3>3.2 Output Format</h3>
+        <div class="code-block">
+            # Output tensor
+            pred_box: torch.Tensor  # Shape: [B, 4]
+            # Coordinates are normalized to [0,1] range
+            # Format: [x1, y1, x2, y2]
+        </div>
+
+        <h2>4. Training Process</h2>
+        <h3>4.1 Loss Function</h3>
+        <div class="code-block">
+            class TransVGLoss(nn.Module):
+                def __init__(self, label_smoothing=0.1, focal_loss=False):
+                    self.bbox_loss = nn.L1Loss()  # Bounding box regression
+                    self.giou_loss = nn.SmoothL1Loss()  # GIoU loss
+        </div>
+
+        <h3>4.2 Training Parameters</h3>
+        <table>
+            <tr>
+                <th>Parameter</th>
+                <th>Value</th>
+                <th>Description</th>
+            </tr>
+            <tr>
+                <td>Batch Size</td>
+                <td>16</td>
+                <td>Number of samples per batch</td>
+            </tr>
+            <tr>
+                <td>Learning Rate</td>
+                <td>1e-4</td>
+                <td>Initial learning rate</td>
+            </tr>
+            <tr>
+                <td>Weight Decay</td>
+                <td>0.05</td>
+                <td>L2 regularization strength</td>
+            </tr>
+            <tr>
+                <td>Epochs</td>
+                <td>300</td>
+                <td>Total training epochs</td>
+            </tr>
+            <tr>
+                <td>Warmup Epochs</td>
+                <td>5</td>
+                <td>Number of warmup epochs</td>
+            </tr>
+        </table>
+
+        <h2>5. Memory Management</h2>
+        <div class="code-block">
+            # CUDA memory settings
+            PYTORCH_CUDA_ALLOC_CONF = 'max_split_size_mb:16,garbage_collection_threshold:0.8,expandable_segments:True'
+        </div>
+
+        <h2>6. Usage Example</h2>
+        <div class="code-block">
+            # Initialize model
+            model = SatVG(args)
+            model.to(device)
+
+            # Forward pass
+            pred_box = model(image, text_tokens, text_mask)
+
+            # Compute loss
+            loss = criterion(pred_box, target_box)
+        </div>
+
+        <h2>7. Performance Metrics</h2>
+        <ul>
+            <li>Mean IoU (Intersection over Union)</li>
+            <li>Accuracy at IoU thresholds: 0.3, 0.5, 0.7</li>
+            <li>Training loss components: bbox_loss, giou_loss</li>
+        </ul>
+
+        <h2>8. References</h2>
+        <ul>
+            <li>ResNet: https://arxiv.org/abs/1512.03385</li>
+            <li>BERT: https://arxiv.org/abs/1810.04805</li>
+            <li>Transformer: https://arxiv.org/abs/1706.03762</li>
+        </ul>
+    </div>
+</body>
+</html> 

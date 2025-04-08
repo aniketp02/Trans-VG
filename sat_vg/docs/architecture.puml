@@ -1,0 +1,58 @@
+@startuml SatVG Architecture
+
+package "Input" {
+    [Satellite Image] as img
+    [Text Query] as text
+}
+
+package "Visual Encoder" {
+    [ResNet Backbone] as resnet
+    [Visual Projection] as vproj
+}
+
+package "Text Encoder" {
+    [BERT Model] as bert
+    [Text Projection] as tproj
+}
+
+package "Fusion" {
+    [REG Token] as reg
+    [Position Embeddings] as pos
+    [VL Transformer] as trans
+}
+
+package "Output" {
+    [Coordinate Regressor] as regressor
+    [Bounding Box] as bbox
+}
+
+img --> resnet
+resnet --> vproj
+text --> bert
+bert --> tproj
+
+vproj --> trans
+tproj --> trans
+reg --> trans
+pos --> trans
+
+trans --> regressor
+regressor --> bbox
+
+note right of img
+  Shape: [B, 3, H, W]
+  H,W = 640x640
+end note
+
+note right of text
+  Shape: [B, L]
+  L = max_query_len (40)
+end note
+
+note right of bbox
+  Shape: [B, 4]
+  [x1, y1, x2, y2]
+  Normalized to [0,1]
+end note
+
+@enduml 
