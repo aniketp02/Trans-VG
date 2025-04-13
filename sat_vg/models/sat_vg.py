@@ -2,16 +2,20 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torchvision
+import os
+import sys
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from transformers import BertModel
 from .vl_transformer import build_vl_transformer
+from backbone_finetuning.models.finetune_model import FineTuneModel
 
 
 class SatVG(nn.Module):
     """
     Satellite Visual Grounding model
     
-    Uses ResNet for extracting image features, BERT for text features,
+    Uses fine-tuned ResNet for extracting image features, BERT for text features,
     and a transformer for fusing the two modalities
     """
     def __init__(self, args):
@@ -20,23 +24,38 @@ class SatVG(nn.Module):
         self.hidden_dim = args.hidden_dim
         self.max_query_len = args.max_query_len
         
-        # ResNet for visual features
+        # Load fine-tuned ResNet for visual features
         if args.backbone == 'resnet50':
-            self.backbone = torchvision.models.resnet50(pretrained=True)
-            backbone_dim = 2048
+            # Try to load fine-tuned model
+            finetuned_path = os.path.join('sat_vg/backbone_finetuning/checkpoints/finetune_v2', 'best_model.pt')
+            if os.path.exists(finetuned_path):
+                print(f"Loading fine-tuned ResNet from {finetuned_path}")
+                finetuned_model = FineTuneModel.load_checkpoint(finetuned_path)
+                self.backbone = finetuned_model.get_feature_extractor()
+            else:
+                print("Fine-tuned model not found, using pretrained ResNet50")
+                self.backbone = torchvision.models.resnet50(pretrained=True)
+                # Remove the final classification layer
+                self.backbone = nn.Sequential(*list(self.backbone.children())[:-2])
         elif args.backbone == 'resnet101':
-            self.backbone = torchvision.models.resnet101(pretrained=True)
-            backbone_dim = 2048
+            # Try to load fine-tuned model
+            finetuned_path = os.path.join('sat_vg/backbone_finetuning/checkpoints/finetune_v2', 'best_model.pt')
+            if os.path.exists(finetuned_path):
+                print(f"Loading fine-tuned ResNet from {finetuned_path}")
+                finetuned_model = FineTuneModel.load_checkpoint(finetuned_path)
+                self.backbone = finetuned_model.get_feature_extractor()
+            else:
+                print("Fine-tuned model not found, using pretrained ResNet101")
+                self.backbone = torchvision.models.resnet101(pretrained=True)
+                # Remove the final classification layer
+                self.backbone = nn.Sequential(*list(self.backbone.children())[:-2])
         else:
             raise ValueError(f"Unsupported backbone: {args.backbone}")
         
-        # Remove the final classification layer
-        self.backbone = nn.Sequential(*list(self.backbone.children())[:-2])
-        
-        # Freeze the early layers
-        for name, parameter in self.backbone.named_parameters():
-            if 'layer2' not in name and 'layer3' not in name and 'layer4' not in name:
-                parameter.requires_grad_(False)
+        # Freeze the backbone if specified
+        if args.freeze_backbone:
+            for param in self.backbone.parameters():
+                param.requires_grad_(False)
         
         # BERT for text features
         self.bert = BertModel.from_pretrained(args.bert_model)
@@ -48,7 +67,7 @@ class SatVG(nn.Module):
                 parameter.requires_grad_(False)
         
         # Linear projections to project features to the same dimension
-        self.visual_projection = nn.Linear(backbone_dim, self.hidden_dim)
+        self.visual_projection = nn.Linear(2048, self.hidden_dim)  # ResNet output is 2048
         self.text_projection = nn.Linear(bert_dim, self.hidden_dim)
         
         # Learnable [REG] token

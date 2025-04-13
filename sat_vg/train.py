@@ -25,6 +25,8 @@ def get_args_parser():
     # Model parameters
     parser.add_argument('--backbone', default='resnet50', type=str,
                         help="Name of the convolutional backbone to use")
+    parser.add_argument('--freeze_backbone', action='store_true',
+                        help="Freeze the backbone weights during training")
     parser.add_argument('--hidden_dim', default=256, type=int,
                         help="Size of the embeddings (dimension of the transformer)")
     parser.add_argument('--dropout', default=0.2, type=float,
