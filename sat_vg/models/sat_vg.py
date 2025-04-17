@@ -4,6 +4,7 @@ import torch.nn.functional as F
 import torchvision
 import os
 import sys
+import timm
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from transformers import BertModel
@@ -15,7 +16,7 @@ class SatVG(nn.Module):
     """
     Satellite Visual Grounding model
     
-    Uses fine-tuned ResNet for extracting image features, BERT for text features,
+    Uses fine-tuned ResNet or ViT for extracting image features, BERT for text features,
     and a transformer for fusing the two modalities
     """
     def __init__(self, args):
@@ -23,8 +24,9 @@ class SatVG(nn.Module):
         # Configuration
         self.hidden_dim = args.hidden_dim
         self.max_query_len = args.max_query_len
+        self.backbone_type = args.backbone
         
-        # Load fine-tuned ResNet for visual features
+        # Load backbone for visual features
         if args.backbone == 'resnet50':
             # Try to load fine-tuned model
             finetuned_path = os.path.join('sat_vg/backbone_finetuning/checkpoints/finetune_v2', 'best_model.pt')
@@ -37,6 +39,11 @@ class SatVG(nn.Module):
                 self.backbone = torchvision.models.resnet50(pretrained=True)
                 # Remove the final classification layer
                 self.backbone = nn.Sequential(*list(self.backbone.children())[:-2])
+            
+            # Set the feature dimension
+            self.feature_dim = 2048
+            self.num_visual_tokens = 49  # 7x7 for a standard ResNet output
+            
         elif args.backbone == 'resnet101':
             # Try to load fine-tuned model
             finetuned_path = os.path.join('sat_vg/backbone_finetuning/checkpoints/finetune_v2', 'best_model.pt')
@@ -49,6 +56,57 @@ class SatVG(nn.Module):
                 self.backbone = torchvision.models.resnet101(pretrained=True)
                 # Remove the final classification layer
                 self.backbone = nn.Sequential(*list(self.backbone.children())[:-2])
+            
+            # Set the feature dimension
+            self.feature_dim = 2048
+            self.num_visual_tokens = 49  # 7x7 for a standard ResNet output
+            
+        elif args.backbone == 'vit':
+            # Load fine-tuned ViT model
+            vit_checkpoints_dir = os.path.join('sat_vg/backbone_finetuning/checkpoints/vit_finetune')
+            # Find the checkpoint with the highest validation accuracy
+            best_checkpoint = None
+            best_accuracy = 0
+            
+            for file in os.listdir(vit_checkpoints_dir):
+                if file.startswith('checkpoint_epoch_'):
+                    checkpoint_path = os.path.join(vit_checkpoints_dir, file)
+                    checkpoint = torch.load(checkpoint_path, map_location=torch.device('cuda'), weights_only=True)
+                    accuracy = checkpoint.get('val_accuracy', 0)
+                    
+                    if accuracy > best_accuracy:
+                        best_accuracy = accuracy
+                        best_checkpoint = checkpoint_path
+            
+            if best_checkpoint:
+                print(f"Loading fine-tuned ViT from {best_checkpoint} (accuracy: {best_accuracy:.2f}%)")
+                checkpoint = torch.load(best_checkpoint, map_location=torch.device('cuda'), weights_only=True)
+                
+                # Create ViT model
+                self.backbone = timm.create_model(
+                    'vit_base_patch16_224',
+                    pretrained=False,
+                    num_classes=0  # Remove classification head
+                )
+                
+                # Load weights except the classification head
+                model_dict = self.backbone.state_dict()
+                pretrained_dict = {k: v for k, v in checkpoint['model_state_dict'].items() 
+                                  if k in model_dict and 'head' not in k}
+                model_dict.update(pretrained_dict)
+                self.backbone.load_state_dict(model_dict)
+            else:
+                print("Fine-tuned ViT model not found, using pretrained ViT")
+                self.backbone = timm.create_model(
+                    'vit_base_patch16_224',
+                    pretrained=True,
+                    num_classes=0  # Remove classification head
+                )
+            
+            # Set the feature dimension
+            self.feature_dim = 768  # ViT hidden dimension
+            self.num_visual_tokens = 196  # 14x14 for ViT with 16x16 patches on 224x224 images
+            
         else:
             raise ValueError(f"Unsupported backbone: {args.backbone}")
         
@@ -67,7 +125,7 @@ class SatVG(nn.Module):
                 parameter.requires_grad_(False)
         
         # Linear projections to project features to the same dimension
-        self.visual_projection = nn.Linear(2048, self.hidden_dim)  # ResNet output is 2048
+        self.visual_projection = nn.Linear(self.feature_dim, self.hidden_dim)
         self.text_projection = nn.Linear(bert_dim, self.hidden_dim)
         
         # Learnable [REG] token
@@ -75,7 +133,6 @@ class SatVG(nn.Module):
         
         # Position embeddings for the combined sequence
         # Max sequence length = 1 ([REG]) + max_query_len + visual_tokens
-        self.num_visual_tokens = 49  # 7x7 for a standard ResNet output
         total_seq_len = 1 + self.max_query_len + self.num_visual_tokens
         self.position_embedding = nn.Embedding(total_seq_len, self.hidden_dim)
         
@@ -88,15 +145,28 @@ class SatVG(nn.Module):
     def forward(self, image, text_tokens, text_mask):
         batch_size = image.shape[0]
         
-        # Extract visual features - shape: [B, C, H, W]
-        visual_features = self.backbone(image)
-        
-        # Reshape visual features to sequence
-        # From [B, C, H, W] to [B, H*W, C]
-        visual_features = visual_features.flatten(2).permute(0, 2, 1)
+        # Extract visual features
+        if self.backbone_type in ['resnet50', 'resnet101']:
+            # ResNet forward pass - shape: [B, C, H, W]
+            visual_features = self.backbone(image)
+            
+            # Reshape visual features to sequence
+            # From [B, C, H, W] to [B, H*W, C]
+            visual_features = visual_features.flatten(2).permute(0, 2, 1)
+        else:  # ViT
+            # ViT forward pass gets patch embeddings
+            visual_features = self.backbone.forward_features(image)
+            
+            if isinstance(visual_features, torch.Tensor):
+                # If output is just the patch embeddings tensor [B, num_patches, C]
+                # Remove the class token
+                visual_features = visual_features[:, 1:, :]
+            else:
+                # If output is a dict with class_token and patch_embeddings
+                visual_features = visual_features['patch_embeddings']
         
         # Project visual features to hidden dimension
-        visual_features = self.visual_projection(visual_features)  # [B, H*W, hidden_dim]
+        visual_features = self.visual_projection(visual_features)  # [B, tokens, hidden_dim]
         
         # Process text with BERT
         text_output = self.bert(input_ids=text_tokens, attention_mask=text_mask)
@@ -110,7 +180,7 @@ class SatVG(nn.Module):
         
         # Concatenate [REG] token, text and visual features
         # [REG] + text + visual
-        sequence = torch.cat([reg_token, text_features, visual_features], dim=1)  # [B, 1+L+H*W, hidden_dim]
+        sequence = torch.cat([reg_token, text_features, visual_features], dim=1)  # [B, 1+L+tokens, hidden_dim]
         
         # Create position embeddings
         seq_length = sequence.size(1)
@@ -144,6 +214,18 @@ class SatVG(nn.Module):
         pred_box = self.coord_regressor(reg_output).sigmoid()  # [B, 4]
         
         return pred_box
+        
+    def to_cuda(self, device='cuda'):
+        """Ensure all model components are on CUDA"""
+        self.backbone = self.backbone.to(device)
+        self.bert = self.bert.to(device)
+        self.visual_projection = self.visual_projection.to(device)
+        self.text_projection = self.text_projection.to(device)
+        self.reg_token = self.reg_token.to(device)
+        self.position_embedding = self.position_embedding.to(device)
+        self.vl_transformer = self.vl_transformer.to(device)
+        self.coord_regressor = self.coord_regressor.to(device)
+        return self.to(device)
 
 
 class MLP(nn.Module):

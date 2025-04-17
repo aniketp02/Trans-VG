@@ -29,7 +29,7 @@ def process_rsvg_dataset(
     # Process each split
     for split_name, split_file in split_files.items():
         # Load split data
-        data = torch.load(os.path.join(rsvg_root, split_file))
+        data = torch.load(os.path.join(rsvg_root, split_file), weights_only=True)
         
         # Process each entry
         for entry in tqdm(data, desc=f"Processing {split_name}"):

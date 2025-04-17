@@ -35,7 +35,7 @@ class SatVGDataset(data.Dataset):
         
         # Load dataset
         self.data_path = os.path.join(data_root, f'rsvg_{split}.pth')
-        self.data = torch.load(self.data_path)
+        self.data = torch.load(self.data_path, weights_only=True)
         self.im_dir = os.path.join(data_root, 'images')
         
         print(f"Loaded {len(self.data)} samples for {split} split")

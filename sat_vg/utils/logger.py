@@ -61,6 +61,14 @@ class Logger:
             value: Scalar value
             step: Step (e.g., epoch) number
         """
+        # Create the scalar directory if it doesn't exist
+        os.makedirs(self.scalar_dir, exist_ok=True)
+        
+        # Create subdirectory if name contains a slash
+        if '/' in name:
+            subdir = os.path.dirname(name)
+            os.makedirs(self.scalar_dir / subdir, exist_ok=True)
+        
         if name not in self.scalar_metrics:
             self.scalar_metrics[name] = []
         

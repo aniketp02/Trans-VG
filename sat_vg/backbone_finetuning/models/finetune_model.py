@@ -130,7 +130,7 @@ class FineTuneModel(nn.Module):
         Returns:
             Loaded model instance
         """
-        checkpoint = torch.load(path)
+        checkpoint = torch.load(path, weights_only=True)
         model = cls(
             backbone=checkpoint['backbone'].lower(),
             num_classes=checkpoint['num_classes']

@@ -60,7 +60,7 @@ def main(args):
     print(f"Using device: {device}")
     
     # Load checkpoint
-    checkpoint = torch.load(args.checkpoint, map_location=device)
+    checkpoint = torch.load(args.checkpoint, map_location=device, weights_only=True)
     
     # Load model configuration from checkpoint
     model_args = checkpoint['args']

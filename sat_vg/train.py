@@ -24,7 +24,7 @@ def get_args_parser():
     
     # Model parameters
     parser.add_argument('--backbone', default='resnet50', type=str,
-                        help="Name of the convolutional backbone to use")
+                        help='Name of the convolutional backbone to use (resnet50, resnet101, vit)')
     parser.add_argument('--freeze_backbone', action='store_true',
                         help="Freeze the backbone weights during training")
     parser.add_argument('--hidden_dim', default=256, type=int,
@@ -148,7 +148,7 @@ def main(args):
             print(f"CUDA device properties: {torch.cuda.get_device_properties(torch.cuda.current_device())}")
             
             # Enable mixed precision training
-            scaler = torch.cuda.amp.GradScaler()
+            scaler = torch.amp.GradScaler('cuda')
     elif args.device == 'mps':
         device = torch.device('mps' if torch.backends.mps.is_available() else 'cpu')
         scaler = None
@@ -247,7 +247,7 @@ def main(args):
     if args.resume:
         if os.path.isfile(args.resume):
             print(f"Loading checkpoint from {args.resume}")
-            checkpoint = torch.load(args.resume, map_location=device)
+            checkpoint = torch.load(args.resume, map_location=device, weights_only=True)
             model.load_state_dict(checkpoint['model'])
             optimizer.load_state_dict(checkpoint['optimizer'])
             lr_scheduler.load_state_dict(checkpoint['scheduler'])
@@ -378,7 +378,7 @@ def train_one_epoch(model, data_loader, optimizer, device, epoch, args, logger, 
         
         # Forward pass with mixed precision
         if scaler is not None:
-            with torch.cuda.amp.autocast():
+            with torch.amp.autocast('cuda'):
                 outputs = model(imgs, text_tokens, text_mask)
                 loss_dict = criterion(outputs, targets)
                 loss = loss_dict['loss']

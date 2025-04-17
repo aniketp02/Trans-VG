@@ -12,7 +12,7 @@ class RSVGConfig:
     SPLIT_ROOT = './rsvg'
     
     # Model settings
-    BACKBONE = 'resnet50'  # Options: resnet50, resnet101
+    BACKBONE = 'resnet50'  # Options: resnet50, resnet101, vit
     BERT_ENC_NUM = 12
     DETR_ENC_NUM = 6
     MAX_QUERY_LEN = 40

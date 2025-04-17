@@ -73,13 +73,8 @@ def create_model(config: ViTConfig) -> nn.Module:
         drop_rate=config.dropout,
         drop_path_rate=0.1,
         img_size=config.image_size,
-        patch_size=config.patch_size,
-        num_layers=config.num_layers,
-        num_heads=config.num_heads,
-        embed_dim=config.hidden_dim,
-        mlp_ratio=4.0,
         qkv_bias=True,
-        drop_attention_rate=config.attention_dropout
+        attn_drop_rate=config.attention_dropout
     )
     return model
 
@@ -91,32 +86,33 @@ def train_epoch(
     criterion: nn.Module,
     device: torch.device,
     mixup_fn: Optional[Mixup],
-    scaler: Optional[torch.cuda.amp.GradScaler] = None
+    scaler: Optional[torch.amp.GradScaler] = None
 ) -> float:
     """Train for one epoch."""
     model.train()
     total_loss = 0.0
     
-    for images, labels in tqdm(train_loader, desc="Training"):
+    for images, targets in tqdm(train_loader, desc="Training"):
         images = images.to(device)
-        labels = labels.to(device)
+        targets = targets.to(device).long()
         
+        # Apply mixup if available
         if mixup_fn is not None:
-            images, labels = mixup_fn(images, labels)
+            images, targets = mixup_fn(images, targets)
         
         optimizer.zero_grad()
         
         if scaler is not None:
-            with torch.cuda.amp.autocast():
+            with torch.amp.autocast('cuda'):
                 outputs = model(images)
-                loss = criterion(outputs, labels)
+                loss = criterion(outputs, targets)
             
             scaler.scale(loss).backward()
             scaler.step(optimizer)
             scaler.update()
         else:
             outputs = model(images)
-            loss = criterion(outputs, labels)
+            loss = criterion(outputs, targets)
             loss.backward()
             optimizer.step()
         
@@ -138,17 +134,17 @@ def validate(
     correct = 0
     total = 0
     
-    for images, labels in tqdm(val_loader, desc="Validation"):
+    for images, targets in tqdm(val_loader, desc="Validation"):
         images = images.to(device)
-        labels = labels.to(device)
+        targets = targets.to(device).long()
         
         outputs = model(images)
-        loss = criterion(outputs, labels)
+        loss = criterion(outputs, targets)
         
         total_loss += loss.item()
         _, predicted = torch.max(outputs.data, 1)
-        total += labels.size(0)
-        correct += (predicted == labels).sum().item()
+        total += targets.size(0)
+        correct += (predicted == targets).sum().item()
     
     accuracy = 100 * correct / total
     return total_loss / len(val_loader), accuracy
@@ -177,13 +173,24 @@ def main(config: ViTConfig) -> None:
     
     # Create learning rate scheduler
     num_steps = len(train_loader) * config.num_epochs
+    
+    # Create args for scheduler
+    class SchedulerArgs:
+        pass
+    
+    scheduler_args = SchedulerArgs()
+    scheduler_args.sched = config.lr_scheduler
+    scheduler_args.epochs = config.num_epochs
+    scheduler_args.lr = config.learning_rate
+    scheduler_args.min_lr = config.min_lr
+    scheduler_args.warmup_lr = config.learning_rate * 0.1
+    scheduler_args.warmup_epochs = config.warmup_epochs
+    scheduler_args.cooldown_epochs = 0
+    scheduler_args.decay_rate = config.lr_gamma
+    
     lr_scheduler, _ = create_scheduler(
+        scheduler_args,
         optimizer,
-        num_epochs=config.num_epochs,
-        num_steps=num_steps,
-        warmup_epochs=config.warmup_epochs,
-        warmup_steps=config.warmup_steps,
-        min_lr=config.min_lr
     )
     
     # Create loss function
@@ -191,6 +198,8 @@ def main(config: ViTConfig) -> None:
     
     # Create mixup augmentation
     mixup_fn = None
+    # Temporarily disable mixup for troubleshooting
+    config.use_augmentation = False
     if config.use_augmentation:
         mixup_fn = Mixup(
             mixup_alpha=config.mixup_alpha,
@@ -200,7 +209,7 @@ def main(config: ViTConfig) -> None:
         )
     
     # Create gradient scaler for mixed precision
-    scaler = torch.cuda.amp.GradScaler() if config.mixed_precision else None
+    scaler = torch.amp.GradScaler('cuda') if config.mixed_precision else None
     
     # Training loop
     best_val_loss = float('inf')

@@ -54,7 +54,7 @@ def get_args_parser():
     # DETR parameters
     # * Backbone
     parser.add_argument('--backbone', default='resnet50', type=str,
-                        help="Name of the convolutional backbone to use")
+                        help='Name of the convolutional backbone to use (resnet50, resnet101, vit)')
     parser.add_argument('--dilation', action='store_true',
                         help="If true, we replace stride with dilation in the last convolutional block (DC5)")
     parser.add_argument('--position_embedding', default='sine', type=str, choices=('sine', 'learned'), help="Type of positional embedding to use on top of the image features")
@@ -66,7 +66,7 @@ def get_args_parser():
     parser.add_argument('--dim_feedforward', default=2048, type=int,
                         help="Intermediate size of the feedforward layers in the transformer blocks")
     parser.add_argument('--hidden_dim', default=256, type=int,
-                        help="Size of the embeddings (dimension of the transformer)")
+                        help='Size of the embeddings for the object detection transformer')
     parser.add_argument('--dropout', default=0.1, type=float,
                         help="Dropout applied in the transformer")
     parser.add_argument('--nheads', default=8, type=int,
