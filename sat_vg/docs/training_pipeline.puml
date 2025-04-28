@@ -1,0 +1,83 @@
+@startuml Training Pipeline
+
+skinparam backgroundColor white
+skinparam componentStyle rectangle
+skinparam arrowColor #666666
+skinparam componentBackgroundColor #f5f5f5
+
+title SatVG Training Pipeline
+
+' Model components
+package "SatVG Model" {
+    component "Visual Encoder" as Visual
+    component "Text Encoder" as Text
+    component "Fusion Module" as Fusion
+    component "BBox Regressor" as Regressor
+}
+
+' Data flow
+component "Input Image" as InputImage
+component "Text Query" as TextQuery
+component "Predicted BBox" as PredictedBBox
+
+InputImage --> Visual
+TextQuery --> Text
+Visual --> Fusion
+Text --> Fusion
+Fusion --> Regressor
+Regressor --> PredictedBBox
+
+' Training components
+package "Training Pipeline" {
+    component "Data Loader" as Loader
+    component "Loss Function" as Loss
+    component "Optimizer" as Optim
+    component "Scheduler" as Sched
+}
+
+' Training flow
+component "Dataset" as Dataset
+Dataset --> Loader
+Loader --> Visual
+Loader --> Text
+Model --> Loss
+Loss --> Optim
+Optim --> Sched
+Sched ..> Model : update
+
+' Component details
+note right of Visual
+  Backbone: ResNet/ViT
+  Output: 2048-D features
+  Pretrained: ImageNet
+end note
+
+note right of Text
+  Model: BERT
+  Output: 768-D features
+  Pretrained: BERT-base
+end note
+
+note right of Fusion
+  Hidden dim: 256
+  Heads: 8
+  Layers: 2
+  Dropout: 0.2
+end note
+
+note right of Regressor
+  Output: [x1,y1,x2,y2]
+  Loss: L1 + GIoU
+  Normalized: [0,1]
+end note
+
+' Training details
+note bottom of "Training Pipeline"
+  Batch size: 8
+  LR: 5e-5
+  Epochs: 200
+  Mixed precision: Yes
+  Augmentations: Mixup/CutMix
+end note
+
+@enduml 

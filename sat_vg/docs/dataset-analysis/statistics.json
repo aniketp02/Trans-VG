@@ -1,0 +1,28 @@
+{
+  "total_samples": 10665,
+  "valid_samples": 9275,
+  "missing_images": 1390,
+  "null_bbox_samples": 0,
+  "box_size": {
+    "mean": 0.16556749895773923,
+    "median": 0.0451546875,
+    "min": 0.0002,
+    "max": 38.80826875
+  },
+  "box_ratio": {
+    "mean": 1.1711391563455305,
+    "median": 1.0,
+    "min": 0.07584650112866817,
+    "max": 10.375
+  },
+  "image_dimensions": {
+    "mean_width": 815.3358490566038,
+    "mean_height": 815.3323989218329
+  },
+  "text_length": {
+    "mean": 10.074824797843666,
+    "median": 9.0,
+    "min": 3.0,
+    "max": 32.0
+  }
+}

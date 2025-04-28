@@ -1,0 +1,51 @@
+@startuml
+
+skinparam backgroundColor white
+skinparam componentStyle rectangle
+skinparam arrowColor #666666
+skinparam componentBackgroundColor #f5f5f5
+
+title RSVG Dataset Structure and Processing Pipeline
+
+package "RSVG Dataset" {
+    [Image Loading] as ImageLoader
+    [Annotation Processing] as Annotation
+    [Data Transformation] as Transform
+}
+
+[Raw Images] --> ImageLoader
+[Annotations] --> Annotation
+ImageLoader --> Transform
+Annotation --> Transform
+Transform --> [Processed Data]
+
+note right of ImageLoader
+  Input: RGB images
+  Size: 815x815 (avg)
+  Missing images: ~13%
+  Error handling: Blank fallback
+end note
+
+note right of Annotation
+  Format: [image_path, None, bbox, query, None]
+  Bbox format: [x1, y1, x2, y2]
+  Query: Natural language
+  Validation: Size/ratio checks
+end note
+
+note right of Transform
+  Resize: 224x224
+  Normalize: ImageNet stats
+  Augmentations: Mixup/CutMix
+  Box normalization: [0,1]
+end note
+
+note bottom of "RSVG Dataset"
+  Total samples: 10,665
+  Valid samples: ~87%
+  Mean box size: 16.6% of image
+  Median box size: 4.5% of image
+  Mean aspect ratio: 1.0
+end note
+
+@enduml 
