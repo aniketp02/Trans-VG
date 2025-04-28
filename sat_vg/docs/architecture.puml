@@ -1,58 +1,51 @@
-@startuml SatVG Architecture
+@startuml
 
-package "Input" {
-    [Satellite Image] as img
-    [Text Query] as text
+skinparam backgroundColor white
+skinparam componentStyle rectangle
+skinparam arrowColor #666666
+skinparam componentBackgroundColor #f5f5f5
+
+title SatVG: Satellite Visual Grounding Architecture
+
+package "SatVG Model" {
+    [Visual Encoder\n(ResNet/ViT)] as VisualEncoder
+    [Text Encoder\n(BERT)] as TextEncoder
+    [Fusion Module] as Fusion
+    [Bounding Box\nRegressor] as Regressor
 }
 
-package "Visual Encoder" {
-    [ResNet Backbone] as resnet
-    [Visual Projection] as vproj
-}
+[Satellite Image] --> VisualEncoder
+[Text Query] --> TextEncoder
+VisualEncoder --> Fusion
+TextEncoder --> Fusion
+Fusion --> Regressor
+Regressor --> [Predicted Bounding Box]
 
-package "Text Encoder" {
-    [BERT Model] as bert
-    [Text Projection] as tproj
-}
-
-package "Fusion" {
-    [REG Token] as reg
-    [Position Embeddings] as pos
-    [VL Transformer] as trans
-}
-
-package "Output" {
-    [Coordinate Regressor] as regressor
-    [Bounding Box] as bbox
-}
-
-img --> resnet
-resnet --> vproj
-text --> bert
-bert --> tproj
-
-vproj --> trans
-tproj --> trans
-reg --> trans
-pos --> trans
-
-trans --> regressor
-regressor --> bbox
-
-note right of img
-  Shape: [B, 3, H, W]
-  H,W = 640x640
+note right of VisualEncoder
+  Input: 3xHxW image tensor
+  Output: 2048-D feature vector
+  Backbone: ResNet50/ViT
 end note
 
-note right of text
-  Shape: [B, L]
-  L = max_query_len (40)
+note right of TextEncoder
+  Input: Text tokens
+  Output: 768-D feature vector
+  Model: BERT-base-uncased
+  Max length: 40 tokens
 end note
 
-note right of bbox
-  Shape: [B, 4]
-  [x1, y1, x2, y2]
-  Normalized to [0,1]
+note right of Fusion
+  Hidden dim: 256
+  Heads: 8
+  FFN dim: 2048
+  Layers: 6
+  Dropout: 0.2
+end note
+
+note right of Regressor
+  Output: [x1, y1, x2, y2]
+  Normalized coordinates
+  L1 + GIoU loss
 end note
 
 @enduml 
