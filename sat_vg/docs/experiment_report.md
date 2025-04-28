@@ -67,19 +67,22 @@ The text queries have a mean length of 10.1 words, with the majority between 5-1
 
 ### Experiment 1: Finetuned ResNet Backbone
 **Configuration:**
-- Backbone: ResNet50 (Finetuned)
-- Text Encoder: BERT-base
-- Fusion Module: 6 layers, 8 heads
-- Hidden Dimension: 256
-- Dropout: 0.2
-- Learning Rate: 5e-5
+- Backbone: ResNet50
+- Dataset: RSVG
+- Image Size: 224x224
 - Batch Size: 8
+- Learning Rate: 5e-5
 - Epochs: 200
+- Augmentations: Mixup/CutMix
+- Mixed Precision: Yes
 
 **Results:**
-- Training Loss: 0.54
-- Validation Loss: 1.39
-- Validation Accuracy: 67.09%
+- Training Loss: Not reported in log
+- Validation Loss: 2.0790
+- Validation mIoU: 5.32%
+- Accuracy@0.3: 6.24%
+- Accuracy@0.5: 1.59%
+- Accuracy@0.7: 0.23%
 
 ### Experiment 2: SatMAE Model
 **Configuration:**
@@ -165,8 +168,8 @@ The text queries have a mean length of 10.1 words, with the majority between 5-1
 
 | Experiment | Backbone | Text Encoder | Fusion Module | Validation mIoU | Improvement |
 |------------|----------|--------------|---------------|-----------------|-------------|
-| Exp1 | ResNet50 | BERT-base | 6L, 8H | 5.68% | Baseline |
-| Exp2 | SatMAE | BERT-base | 6L, 8H | 10.08% | +4.40% |
+| Exp1 | ResNet50 | BERT-base | 6L, 8H | 5.32% | Baseline |
+| Exp2 | SatMAE | BERT-base | 6L, 8H | 10.08% | +4.76% |
 | Exp3 | SatMAE | Enhanced BERT | 8L, 12H | 9.76% | -0.32% |
 | Exp4 | ViT-B/16 | Enhanced BERT | 8L, 12H | 5.72% | -4.04% |
 
